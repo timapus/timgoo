@@ -165,12 +165,12 @@ enum Codes
 /** before starting execution with CPU(). It sets the       **/
 /** registers to their supposed initial values.             **/
 /*************************************************************/
-void ResetCPU()
+void ResetCPU(uint16_t ADDR)
 {
-  CPU.PC.W     = 0x0000;
+  CPU.PC.W     = ADDR;
   CPU.I        = 0x00;
   CPU.IFF      = 0x00;
-  CPU.ICount   = CPU.IPeriod;
+  CPU.ICount   = 0;
   CPU.IRequest = INT_NONE;
   CPU.STACK	   = 0;
 }
@@ -181,19 +181,22 @@ void ResetCPU()
 /*************************************************************/
 word ExecCPU()
 {
-  register byte I;
-  register pair J;
+	register byte I;
+	register pair J;
 
-  I=RdCPU(CPU.PC.W++);
-  CPU.ICount-=Cycles[I];
+	//CPU.ICount = 0;
 
-  switch(I)
-  {
-#include "Codes.h"
-  }
-
-  /* We are done */
-  return(CPU.PC.W);
+	while(CPU.ICount <= CPU.IPeriod)
+	{
+		I=RdCPU(CPU.PC.W++);
+		CPU.ICount += Cycles[I];
+		switch(I)
+		{
+			#include "Codes.h"
+		}
+	}
+	CPU.ICount -= CPU.IPeriod;
+	return(CPU.PC.W);
 }
 
 /** IntCPU() *************************************************/
@@ -302,14 +305,14 @@ word RunCPU()
         if(CPU.ICount>0) J.W=CPU.IRequest;
         else
         {
-          J.W=LoopCPU();        // Call periodic handler
+          //J.W=LoopCPU();        // Call periodic handler
           CPU.ICount+=CPU.IPeriod; // Reset the cycle counter
           if(J.W==INT_NONE) J.W=CPU.IRequest;  // Pending IRQ
         }
       }
       else
       {
-        J.W=LoopCPU();          // Call periodic handler
+        //J.W=LoopCPU();          // Call periodic handler
         CPU.ICount+=CPU.IPeriod;   // Reset the cycle counter
         if(J.W==INT_NONE) J.W=CPU.IRequest;    // Pending IRQ
       }

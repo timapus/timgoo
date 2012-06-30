@@ -83,7 +83,7 @@ typedef struct
   pair AF,BC,DE,HL,PC,SP;       /* Main registers      */
   byte IFF,I;                   /* Interrupt registers */
 
-  int IPeriod,ICount; /* Set IPeriod to number of CPU cycles */
+  word IPeriod,ICount; /* Set IPeriod to number of CPU cycles */
                       /* between calls to LoopCPU()          */
   int IBackup;        /* Private, don't touch                */
   word IRequest;      /* Set to address of pending IRQ       */
@@ -100,18 +100,18 @@ typedef struct
 /** starting execution with RunCPU(). It sets registers to  **/
 /** their initial values.                                   **/
 /*************************************************************/
-void ResetCPU();
+void ResetCPU(uint16_t ADDR);
 
 /** ExecCPU() ************************************************/
 /** This function will execute a single CPU opcode. It will **/
 /** then return next PC, and current register values in R.  **/
 /*************************************************************/
-word ExecCPU();
+uint16_t ExecCPU();
 
 /** IntCPU() *************************************************/
 /** This function will generate interrupt of given vector.  **/
 /*************************************************************/
-void IntCPU(register word Vector);
+void IntCPU(register uint16_t Vector);
 
 /** RunCPU() *************************************************/
 /** This function will run CPU code until an LoopCPU() call **/
@@ -124,33 +124,16 @@ word RunCPU();
 /** These functions are called when access to RAM occurs.   **/
 /** They allow to control memory access.                    **/
 /************************************ TO BE WRITTEN BY USER **/
-void WrCPU(register word Addr,register byte Value);
-byte RdCPU(register word Addr);
+void WrCPU(register uint16_t Addr, register uint8_t Value);
+uint8_t RdCPU(register uint16_t Addr);
 
 /** InCPU()/OutCPU() *****************************************/
 /** CPU emulation calls these functions to read/write from  **/
 /** I/O ports. There can be 65536 I/O ports, but only first **/
 /** 256 are usually used.                                   **/
 /************************************ TO BE WRITTEN BY USER **/
-void OutCPU(register word Port,register byte Value);
-byte InCPU(register word Port);
-
-/** DebugCPU() ***********************************************/
-/** This function should exist if DEBUG is #defined. When   **/
-/** Trace!=0, it is called after each command executed by   **/
-/** the CPU, and given the Z80 registers. Emulation exits   **/
-/** if DebugCPU() returns 0.                                **/
-/*************************************************************/
-
-/** LoopCPU() ************************************************/
-/** Z80 emulation calls this function periodically to check **/
-/** if the system hardware requires any interrupts. This    **/
-/** function must return an address of the interrupt vector **/
-/** (0x0038, 0x0066, etc.) or INT_NONE for no interrupt.    **/
-/** Return INT_QUIT to exit the emulation loop.             **/
-/************************************ TO BE WRITTEN BY USER **/
-word LoopCPU();
-
+void OutCPU(register uint16_t Port, register uint8_t Value);
+uint8_t InCPU(register uint16_t Port);
 
 static const byte Cycles[256] =
 {
