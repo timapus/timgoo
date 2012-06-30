@@ -13,6 +13,7 @@
 #include <sml/timer.h>
 #include <sml/graphics.h>
 #include <sml/display.h>
+#include <sml/mtaudio.h>
 
 #include "font.h"
 
@@ -20,8 +21,6 @@
 #include "I8255.h"
 #include "ram.h"
 #include "rom.h"
-
-#define SCANLINE_MAX	256
 
 I8080  			CPU;
 I8255			PPI[2];
@@ -31,22 +30,27 @@ uint16_t		PALETTE[4] = { 0,0,0,0 };
 uint8_t 		screen[256][256];
 uint8_t 		KEY_BASE[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 uint8_t	 		KEY_EXT[4] = {0xFF,0xFF,0xFF,0xFF};
-bool			ROM_CS;
 
 display*        appDisplay  = NULL;
 gfx_texture*    appImage    = NULL;
 char			tempFileName[256];
 char			tempFileName2[256];
-bool            error = false;
 bool            appRunning = true;
 
 gfx_font*		appFont     = NULL;
 
+bool			VSYNC = FALSE;
+
+uint8_t			speaker[896];
+uint8_t			sound_buf_ptr = 0;
+int16_t			sound_buf[2][896];		// 44100/50 = 882 семпла за 20мс
+
+uint8_t			volume = 3;
+bool			volume_visible = FALSE;
+int16_t			sample = 16384;
 
 int ref = 1;
 //extern int _sys_judge_event(void *);
-
-uint16_t	ScanLine = 0;
 
 // Calculates color value from palette port
 uint16_t COL(uint8_t color)
@@ -78,42 +82,23 @@ uint16_t COL(uint8_t color)
 	return Result;
 }
 
-/*
-void framebuffer(void)
-{
-	uint16_t x,y;
-	uint32_t c;
-	uint16_t* tempPtr = (uint16_t*)(gfx_render_target->address) + 32;
-
-	for (y = 0; y < 256; y++)
-	{
-		c = (y * gfx_render_target->width);
-
-		for (x = 0; x < 256; x++)
-		{
-			tempPtr[c + x] = COL(screen[x][y]);
-		}
-	}
-}
-*/
-
-unsigned char remap_y[256] = {
-  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 14,
- 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 29,
- 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 44,
- 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 59,
- 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 74,
- 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 89,
- 90, 91, 92, 93, 94, 95, 96, 97, 98, 99,100,101,102,103,104,104,
-105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,119,
-120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,134,
-135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,149,
-150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,164,
-165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,179,
-180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,194,
-195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,209,
-210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,224,
-225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,239
+uint8_t remap_y[240] = {
+  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+ 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+ 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+ 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62,
+ 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+ 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94,
+ 96, 97, 98, 99,100,101,102,103,104,105,106,107,108,109,110,
+112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,
+128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,
+144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,
+160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,
+176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,
+192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,
+208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,
+224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,
+240,241,242,243,244,245,246,247,248,249,250,251,252,253,254
 };
 
 uint8_t*  _display_lut_blend6_2 = NULL;
@@ -136,22 +121,27 @@ bool _display_lut_create_blend6_2() {
 	return true;
 }
 
-void linebuffer(word y)
+void framebuffer(void)
 {
-	if ((y & 0x0F) != 0x0F)
+	uint8_t y,y1,y2;
+
+	for (y = 0; y < 240; y++)
 	{
+		y1 = remap_y[y];
+		y2 = y1 + 1;
+
 		uint8_t* tempLutX = &_display_lut_blend6_2[0];
-		uint8_t* tempLutY = &_display_lut_blend6_2[(y<<12) & 0x0000F000];
+		uint8_t* tempLutY = &_display_lut_blend6_2[(y1<<12) & 0x0000F000];
 
 		uint16_t inColor0,inColor2,tempR0,tempR1,tempG0,tempG1,tempB0,tempB1;
 
 		uint16_t x;
-		uint16_t* tempPtr = (uint16_t*)(gfx_render_target->address) + (remap_y[y] * gfx_render_target->width) + 32;
+		uint16_t* tempPtr = (uint16_t*)(gfx_render_target->address) + (y * gfx_render_target->width) + 32;
 
 		for (x = 0; x < 256; x++)
 		{
-			inColor0 = PALETTE[screen[x][y]];
-			inColor2 = PALETTE[screen[x][y+1]];
+			inColor0 = PALETTE[screen[y1][x]];
+			inColor2 = PALETTE[screen[y2][x]];
 
 			tempR0 = tempLutX[((inColor0 & 0xF800) >> 10)];
 			tempG0 = tempLutX[((inColor0 & 0x07E0) >> 5)];
@@ -170,24 +160,23 @@ void linebuffer(word y)
    	}
 }
 
+/** ResetComp() *********************************************/
+/** User calls this function to reset the emulation system **/
+/*************************************************************/
 void ResetComp(void)
 {
-	ROM_CS = TRUE;
-
 	Reset8255(&PPI[0]);
 	Reset8255(&PPI[1]);
-
-	CPU.IAutoReset = 1;
-	CPU.IPeriod = 192;
-
-	ResetCPU();
+	CPU.IPeriod = 44800; //160*280;
+	VSYNC = FALSE;
+	ResetCPU(0xE000);
 }
 
 /** WrCPU() **************************************************/
 /** CPU emulation calls this function to write byte V to    **/
 /** address A of CPU address space.                         **/
 /*************************************************************/
-void WrCPU(word A, byte V)
+void WrCPU(uint16_t A, uint8_t V)
 {
 	if (A < 0xC000)
 	{
@@ -206,18 +195,18 @@ void WrCPU(word A, byte V)
 					// update framebuffer
 					uint8_t y = (A >> 6);
 					uint8_t x = (A << 2);
+
 //					uint8_t c;
 //					for (c=4; c>0; c--)
 //					{
-//						//screen[x++][y] = ((V & 0x80) >> 6) | ((V & 0x08) >> 3);	// (1)
-//						screen[x++][y] = ((((V & 0x80) >> 3) | (V & 0x08)) >> 3);	// (2)
+//						//screen[y][x++] = ((V & 0x80) >> 6) | ((V & 0x08) >> 3);	// (1)
+//						screen[y][x++] = ((((V & 0x80) >> 3) | (V & 0x08)) >> 3);	// (2)
 //						V <<= 1;
 //					}
-					screen[x++][y] = ((((V & 0x80) >> 3) | (V & 0x08)) >> 3);		// (3)
-					screen[x++][y] = ((((V & 0x40) >> 3) | (V & 0x04)) >> 2);
-					screen[x++][y] = ((((V & 0x20) >> 3) | (V & 0x02)) >> 1);
-					screen[x][y] = (((V & 0x10) >> 3) | (V & 0x01));
-
+					screen[y][x++] = ((((V & 0x80) >> 3) | (V & 0x08)) >> 3);		// (3)
+					screen[y][x++] = ((((V & 0x40) >> 3) | (V & 0x04)) >> 2);
+					screen[y][x++] = ((((V & 0x20) >> 3) | (V & 0x02)) >> 1);
+					screen[y][x]   =  (((V & 0x10) >> 3) | (V & 0x01));
 				}
 				else
 				{
@@ -232,13 +221,8 @@ void WrCPU(word A, byte V)
 /** CPU emulation calls this function to read a byte from   **/
 /** address A of CPU address space.                         **/
 /*************************************************************/
-byte RdCPU(word A)
+uint8_t RdCPU(uint16_t A)
 {
-	if ((ROM_CS) && (A < 0x4000))
-	{
-		return ROM[A];
-	}
-	else
 	if (PPI[0].Rout[2] & 0x02)	// 1 - Close Video RAM (default)
 	{
 		if (A < 0xC000)
@@ -282,18 +266,25 @@ byte RdCPU(word A)
 /** CPU emulation calls this function to write byte V to a  **/
 /** given I/O port.                                         **/
 /*************************************************************/
-void OutCPU(word Port,byte Value)
+void OutCPU(uint16_t Port, uint8_t Value)
 {
 	uint8_t KK;
 
 	switch (Port)
 	{
 		case 0xC0:
-		case 0xC2:
 		case 0xC3:
 		case 0xD1:
 		case 0xD3:
 			Write8255(&PPI[(Port & 0x10) >> 4],Port & 0x03,Value);
+			break;
+		// Port C (D30)
+		case 0xC2:
+			if ((Value ^ PPI[0].Rout[2]) & 1)
+			{
+				speaker[CPU.ICount / 50] = 1;
+			}
+			Write8255(&PPI[0],2,Value);
 			break;
 		// Port B (D30)
 		case 0xC1:
@@ -306,7 +297,7 @@ void OutCPU(word Port,byte Value)
 			KK = 0xFF;
 			//if ((PPI[1].Rout[0] & 0x80) == 0) KK &= KEY_BASE[7];
 			//if ((PPI[1].Rout[0] & 0x40) == 0) KK &= KEY_BASE[6];
-			//if ((PPI[1].Rout[0] & 0x20) == 0) KK &= KEY_BASE[5];
+			if ((PPI[1].Rout[0] & 0x20) == 0) KK &= KEY_BASE[5];
 			//if ((PPI[1].Rout[0] & 0x10) == 0) KK &= KEY_BASE[4];
 			if ((PPI[1].Rout[0] & 0x08) == 0) KK &= KEY_BASE[3];
 			//if ((PPI[1].Rout[0] & 0x04) == 0) KK &= KEY_BASE[2];
@@ -319,20 +310,19 @@ void OutCPU(word Port,byte Value)
 			Write8255(&PPI[1],2,Value);
 			KK = 0xFF;
 			if ((PPI[1].Rout[2] & 0x08) == 0) KK &= KEY_EXT[3];
-			//if ((PPI[1].Rout[2] & 0x04) == 0) KK &= KEY_EXT[2];
+			if ((PPI[1].Rout[2] & 0x04) == 0) KK &= KEY_EXT[2];
 			//if ((PPI[1].Rout[2] & 0x02) == 0) KK &= KEY_EXT[1];
 			//if ((PPI[1].Rout[2] & 0x01) == 0) KK &= KEY_EXT[0];
 			PPI[1].Rin[2] = KK;
 			break;
 	}
-	ROM_CS = FALSE;
 }
 
 /** InCPU() **************************************************/
 /** CPU emulation calls this function to read a byte from   **/
 /** a given I/O port.                                       **/
 /*************************************************************/
-byte InCPU(word Port)
+uint8_t InCPU(uint16_t Port)
 {
 	switch (Port)
 	{
@@ -358,7 +348,7 @@ byte InCPU(word Port)
 void gameScreenshot(void)
 {
 	char tempString[256];
-	unsigned long int tempNumber = 0;
+	uint16_t tempNumber = 0;
 	FILE* tempFile;
 	while(true)
 	{
@@ -372,18 +362,44 @@ void gameScreenshot(void)
 	gfx_tex_save_tga(tempString, gfx_render_target);
 }
 
+/** update_keys() ********************************************/
+/** System calls this function to get a keyboard's status   **/
+/*************************************************************/
 void update_keys(void)
 {
 	control_poll();
 
+	// RESET: COLD or WARM
 	if (control_check(CONTROL_POWER).pressed)
 	{
 		while (control_still_pressed(CONTROL_POWER)) control_poll();
 		ResetComp();
 		// WARM RESET
-		if (control_check(CONTROL_TRIGGER_RIGHT).pressed) KEY_BASE[5] &= 0x7F;
+		if (control_check(CONTROL_BUTTON_SELECT).pressed) KEY_BASE[5] &= 0x7F;
 	}
-
+	// WARM RESET button release
+	if (((KEY_BASE[5] & 0x80) == 0) && (!control_check(CONTROL_BUTTON_SELECT).pressed))
+	{
+		KEY_BASE[5] |= 0x80;
+	}
+	// Volume control
+	if (control_check(CONTROL_TRIGGER_LEFT).pressed)
+	{
+		if (control_just_pressed(CONTROL_DPAD_UP))
+		{
+			if ((volume_visible) && (volume<10)) volume ++;
+			volume_visible = TRUE;
+		}
+		if (control_just_pressed(CONTROL_DPAD_DOWN))
+		{
+			if ((volume_visible) && (volume>0)) volume --;
+			volume_visible = TRUE;
+		}
+	}
+	else
+	{
+		volume_visible = FALSE;
+	}
 
 	if (control_check(CONTROL_BUTTON_START).pressed)
 	{
@@ -393,24 +409,21 @@ void update_keys(void)
 			appRunning = FALSE;
 			//while (control_still_pressed(CONTROL_BUTTON_SELECT)) control_poll();
 	  	}
+		else
 		// SCREENSHOT
 		if (control_check(CONTROL_TRIGGER_LEFT).pressed)
 		{
+			mtaudio_pause(TRUE);
 			gameScreenshot();
 			while (control_still_pressed(CONTROL_TRIGGER_LEFT)) control_poll();
-		}
-		// RESET
-		if (control_check(CONTROL_TRIGGER_RIGHT).pressed)
-		{
-			while (control_still_pressed(CONTROL_TRIGGER_RIGHT)) control_poll();
-			ResetComp();
-			// WARM RESET
-			if (control_check(CONTROL_BUTTON_B).pressed) KEY_BASE[5] &= 0x7F;
+			mtaudio_pause(FALSE);
 		}
 	}
 	else
   	{
-	  	// "up-left"
+		if ((!volume_visible))
+		{
+		// "up-left"
 	  	//if (control_check(CONTROL_TRIGGER_LEFT).pressed)	KEY[1] &= 0xFE; else KEY[0] |= 0x01;
 	  	// "ctr"
 	  	//if (control_check(CONTROL_TRIGGER_RIGHT).pressed)	KEY[1] &= 0xFD; else KEY[0] |= 0x02;
@@ -425,18 +438,9 @@ void update_keys(void)
 	  	// "space"
   	  	if (control_check(CONTROL_BUTTON_A).pressed)		KEY_BASE[3] &= 0xFE; else KEY_BASE[3] |= 0x01;
   	  	// "enter"
-  	  	if (control_check(CONTROL_BUTTON_B).pressed)
-  	  	{
-  	  		if (KEY_BASE[5] & 0x80)
-  	  		{
-  	  			KEY_BASE[1] &= 0xF7;
-  	  		}
-  	  	}
-  	  	else
-  	  	{
-  	  		KEY_BASE[1] |= 0x08;
-  	  		KEY_BASE[5] |= 0x80;
-  	  	}
+  	  	if (control_check(CONTROL_BUTTON_B).pressed)		KEY_BASE[1] &= 0xF7; else KEY_BASE[1] |= 0x08;
+	  	// "left-up arrow"
+	  	if (control_check(CONTROL_BUTTON_Y).pressed)		KEY_EXT[2] &= 0xEF; else KEY_EXT[2] |= 0x10;
   	  	// N
   	  	//if (control_check(CONTROL_BUTTON_X).pressed)		KEY[5] &= 0xBF; else KEY[5] |= 0x40;
   	  	// Y / D
@@ -450,53 +454,23 @@ void update_keys(void)
   	  		KEY[7] |= 0x02;		// Y
   	  		KEY[4] |= 0x10;		// D
   	  	}*/
+		}
   	}
 }
 
-/** LoopCPU() ************************************************/
-/** Refresh screen, check keyboard and sprites. Call this   **/
-/** function on each interrupt.                             **/
+/** sound_thread() *******************************************/
+/** System calls this function to get a sound data          **/
 /*************************************************************/
-//uint32_t _time = 0;
-//uint32_t _ticks = 0;
-//uint32_t _last = 0;
-
-word LoopCPU()
+void sound_thread()
 {
-//	int sysref;
-//	sysref = _sys_judge_event(NULL);
-//	if (sysref < 0)
-//	{
-//			//word ref = sysref;
-//			return 0;
-//	}
-	linebuffer(ScanLine++);
-	if (ScanLine == SCANLINE_MAX)
-	{
-//		uint32_t tempTime = OSTimeGet();
-// 	  	uint32_t tempTicks = tempTime - _last;
-// 	  	_last = tempTime;
-// 	  	char tempString[256];
-//	  	sprintf(tempString, "%04d", tempTicks);
-//	  	gfx_font_print(32,0,appFont,tempString);
-
-	  	display_flip(appDisplay);
-  	  	ScanLine = 0;
-  	  	update_keys();
-	}
-
-  	if (appRunning)
-  	{
-  		CPU.IRequest = INT_NONE;
-  	}
-  	else
-  	{
-  		CPU.IRequest = INT_QUIT;
-  	}
-  	return(CPU.IRequest);
+	mtaudio_buffer_set(&sound_buf[sound_buf_ptr],896*2,1,volume*3,44100);
+	sound_buf_ptr = 1 - sound_buf_ptr;
+	VSYNC = TRUE;
 }
 
-//
+/** main() ***************************************************/
+/** Main routine                                            **/
+/*************************************************************/
 int main(int argc, char** argv)
 {
 	FILE* fp;
@@ -508,7 +482,7 @@ int main(int argc, char** argv)
 		return ref;
 	}
 
-	cpu_clock_set(400000000);
+	//cpu_clock_set(400000000);
 
 	control_init();
 	control_lock(timer_resolution / 4);
@@ -520,9 +494,10 @@ int main(int argc, char** argv)
 	// clear screen (II)
 	//gfx_render_target_clear(gfx_color_rgb(0x00, 0x00, 0x00));
 	//display_flip(appDisplay);
+
 	// load font
-	appFont = gfx_font_load_from_buffer(font, fontSize, COLOR_WHITE);
-	gfx_font_color_set(appFont, COLOR_BLACK);
+	appFont = gfx_font_load_from_buffer(font, fontSize, COLOR_BLACK);
+	gfx_font_color_set(appFont, COLOR_WHITE);
 
 	ResetComp();
 
@@ -642,19 +617,69 @@ int main(int argc, char** argv)
 	tempFileName[strlen(tempFileName) - 4] = '\0';
 
 	_display_lut_create_blend6_2();
+	uint32_t _last = 0;
+	uint8_t VSYNC_TRAP = 0;
+	mtaudio_init(sound_thread,44100);
 
-	RunCPU();
+	while (appRunning)
+	{
+		if (VSYNC)
+		{
+			VSYNC = FALSE;
+			ExecCPU();
+
+			for (i=0; i<896; i++)
+			{
+				if (speaker[i])
+				{
+					sample = -sample;
+					speaker[i] = 0;
+				}
+				sound_buf[sound_buf_ptr][i] = sample;
+			}
+
+			framebuffer();
+			uint32_t tempTime = OSTimeGet();
+	 	  	uint32_t tempTicks = tempTime - _last;
+	 	  	_last = tempTime;
+	 	  	char tempString[256];
+
+	 	  	if (volume_visible)
+	 	  	{
+	 	  		gfx_rect_fill_draw(32,0,10*6,9,COLOR_BLACK);
+	 	  		sprintf(tempString, "VOLUME: %02d", volume);
+			  	gfx_font_print(32,0,appFont,tempString);
+	 	  	}
+	 	  	else
+	 	  	{
+	 	  		if (VSYNC_TRAP)
+	 	  		{
+		 	  		gfx_rect_fill_draw(32,0,6,9,COLOR_BLACK);
+		 	  		sprintf(tempString, "%01d %01d", tempTicks, VSYNC_TRAP);
+				  	gfx_font_print(32,0,appFont,tempString);
+	 	  		}
+	 	  	}
+
+		  	display_flip(appDisplay);
+	  	  	update_keys();
+
+	  	  	if (VSYNC)
+	 	  	{
+	 	  		VSYNC_TRAP++;
+	 	  	}
+		}
+	}
 
 	// save MEMORY
-//	if (control_check(CONTROL_TRIGGER_LEFT).pressed)
-//	{
-//		strcat(tempFileName, ".info");
-//		fp = fopen(tempFileName, "wb");
-		//fwrite(&RAM, sizeof(RAM), 1, fp);
-		//fwrite(&ROM, sizeof(ROM), 1, fp);
-//		fclose(fp);
-//	}
+	if (control_check(CONTROL_TRIGGER_LEFT).pressed)
+	{
+		strcat(tempFileName, ".info");
+		fp = fopen(tempFileName, "wb");
+		fwrite(&RAM, sizeof(RAM), 1, fp);
+		fclose(fp);
+	}
 
+	mtaudio_term();
 	gfx_font_delete(appFont);
 	gfx_term();
 	display_delete(appDisplay);
