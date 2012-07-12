@@ -124,19 +124,19 @@ bool _display_lut_create_blend6_2() {
 void framebuffer(void)
 {
 	uint8_t y,y1,y2;
+	uint16_t x;
+	uint16_t* tempPtr = (uint16_t*)(gfx_render_target->address)-32;
+	uint8_t* tempLutX = &_display_lut_blend6_2[0];
+	uint8_t* tempLutY;
+	uint16_t inColor0,inColor2,tempR0,tempR1,tempG0,tempG1,tempB0,tempB1;
 
 	for (y = 0; y < 240; y++)
 	{
 		y1 = remap_y[y];
 		y2 = y1 + 1;
 
-		uint8_t* tempLutX = &_display_lut_blend6_2[0];
-		uint8_t* tempLutY = &_display_lut_blend6_2[(y1<<12) & 0x0000F000];
-
-		uint16_t inColor0,inColor2,tempR0,tempR1,tempG0,tempG1,tempB0,tempB1;
-
-		uint16_t x;
-		uint16_t* tempPtr = (uint16_t*)(gfx_render_target->address) + (y * gfx_render_target->width) + 32;
+		tempLutY = &_display_lut_blend6_2[(y1<<12) & 0x0000F000];
+		tempPtr = tempPtr + 64;
 
 		for (x = 0; x < 256; x++)
 		{
@@ -155,7 +155,7 @@ void framebuffer(void)
 			tempG0 = tempLutY[tempG0 | (tempG1 << 6)];
 			tempB0 = tempLutY[tempB0 | (tempB1 << 6)];
 
-			tempPtr[x] = (((tempR0 << 10) & 0xF800) | (tempG0 << 5) | (tempB0 >> 1));
+			*tempPtr++ = (((tempR0 << 10) & 0xF800) | (tempG0 << 5) | (tempB0 >> 1));
     	}
    	}
 }
