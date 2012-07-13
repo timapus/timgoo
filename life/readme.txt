@@ -1,6 +1,6 @@
-Life v1.1
+Life v1.2
 ~~~~~~~~~
-23.06.2012
+13.07.2012
 timsoft@mail.ru
 http://code.google.com/p/timgoo
 
