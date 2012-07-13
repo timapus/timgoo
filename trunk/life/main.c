@@ -1,12 +1,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <dingoo/slcd.h>
+#include <dingoo/cache.h>
 #include <sml/control.h>
 #include <sml/timer.h>
 #include <sml/graphics.h>
 #include <sml/display.h>
 
-#define VERSION	1.1
+#define VERSION	1.2
 
 extern int _sys_judge_event(void *);
 
@@ -182,13 +184,14 @@ void field_calculator()
     }
 }
 
-int main(void) {
-        unsigned int j;
-        unsigned short i;
-        int ref = 1;
-        bool auto_calc = TRUE, temp, need_update_display = TRUE;
-     
-        gameDisplay = display_create(320, 240, 320, (DISPLAY_FORMAT_RGB565 | DISPLAY_BUFFER_STATIC), NULL, NULL);
+int main(void)
+{
+	unsigned int j;
+	unsigned short i;
+	int ref = 1;
+	bool auto_calc = TRUE, temp, need_update_display = TRUE;
+
+	gameDisplay = display_create(320, 240, 320, (DISPLAY_FORMAT_RGB565|DISPLAY_BUFFER_STATIC), (uint32_t*)_lcd_get_frame(), NULL);
 	if(gameDisplay == NULL) {
 		return ref;
 	}
@@ -315,7 +318,9 @@ int main(void) {
                 if (need_update_display)
                 {
                     display_life();
-                    display_flip(gameDisplay);
+        			__dcache_writeback_all();
+        			_lcd_set_frame();
+                    //display_flip(gameDisplay);
                     need_update_display = FALSE;
                 }
         }
