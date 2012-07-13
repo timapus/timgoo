@@ -22,12 +22,18 @@
 #include "ram.h"
 #include "rom.h"
 
+#define SCREEN_WIDTH  320
+#define SCREEN_HEIGHT 240
+
 I8080  			CPU;
 I8255			PPI[2];
 //uint8_t		RAM[0xC000];
 uint8_t			VRAM[0x4000];
-uint16_t		PALETTE[4] = { 0,0,0,0 };
+
+uint8_t			blend[240];
 uint8_t 		screen[256][256];
+uint16_t		PALETTE[4] = { 0,0,0,0 };
+
 uint8_t 		KEY_BASE[8] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 uint8_t	 		KEY_EXT[4] = {0xFF,0xFF,0xFF,0xFF};
 
@@ -132,10 +138,11 @@ void framebuffer(void)
 
 	for (y = 0; y < 240; y++)
 	{
+		tempLutY = &_display_lut_blend6_2[blend[y]<<12];
+
 		y1 = remap_y[y];
 		y2 = y1 + 1;
 
-		tempLutY = &_display_lut_blend6_2[(y1<<12) & 0x0000F000];
 		tempPtr = tempPtr + 64;
 
 		for (x = 0; x < 256; x++)
@@ -476,7 +483,7 @@ int main(int argc, char** argv)
 	FILE* fp;
 	int i,c;
 
-	appDisplay = display_create(320, 240, 320, (DISPLAY_FORMAT_RGB565|DISPLAY_BUFFER_STATIC), NULL, NULL);
+	appDisplay = display_create(320, 240, 320, (DISPLAY_FORMAT_RGB565|DISPLAY_BUFFER_STATIC), (uint32_t*)_lcd_get_frame(), NULL);
 	if(appDisplay == NULL)
 	{
 		return ref;
@@ -616,6 +623,14 @@ int main(int argc, char** argv)
 
 	tempFileName[strlen(tempFileName) - 4] = '\0';
 
+	uint32_t j_draw_dx = ((256 - 1) << 16) / (SCREEN_HEIGHT - 1);
+	uint32_t j_draw = 0;
+	uint8_t j_disp;
+	for(j_disp = 0, j_draw = 0; j_disp < SCREEN_HEIGHT; j_disp++, j_draw += j_draw_dx)
+	{
+		blend[j_disp] = ((j_draw & 0xF000) >> 12);
+	}
+
 	_display_lut_create_blend6_2();
 	uint32_t _last = 0;
 	uint8_t VSYNC_TRAP = 0;
@@ -660,7 +675,8 @@ int main(int argc, char** argv)
 	 	  		}
 	 	  	}
 
-		  	display_flip(appDisplay);
+			__dcache_writeback_all();
+			_lcd_set_frame();
 	  	  	update_keys();
 
 	  	  	if (VSYNC)
