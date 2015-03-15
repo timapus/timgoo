@@ -1,0 +1,1 @@
+Various stuff for Dingoo A-320
